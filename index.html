@@ -1,0 +1,1438 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <link rel="stylesheet" href="css/leaflet.css">
+        <link rel="stylesheet" href="css/L.Control.Layers.Tree.css">
+        <link rel="stylesheet" href="css/L.Control.Locate.min.css">
+        <link rel="stylesheet" href="css/qgis2web.css">
+        <link rel="stylesheet" href="css/fontawesome-all.min.css">
+        <link rel="stylesheet" href="css/leaflet-search.css">
+        <link rel="stylesheet" href="css/leaflet.photon.css">
+        <link rel="stylesheet" href="css/leaflet-measure.css">
+        <style>
+        html, body, #map {
+            width: 100%;
+            height: 100%;
+            padding: 0;
+            margin: 0;
+        }
+        </style>
+        <title>Spatial Employment Map of Surakarta</title>
+    </head>
+    <body>
+        <div id="map">
+        </div>
+        <script src="js/qgis2web_expressions.js"></script>
+        <script src="js/leaflet.js"></script>
+        <script src="js/L.Control.Layers.Tree.min.js"></script>
+        <script src="js/L.Control.Locate.min.js"></script>
+        <script src="js/leaflet.rotatedMarker.js"></script>
+        <script src="js/leaflet.pattern.js"></script>
+        <script src="js/leaflet-hash.js"></script>
+        <script src="js/Autolinker.min.js"></script>
+        <script src="js/rbush.min.js"></script>
+        <script src="js/labelgun.min.js"></script>
+        <script src="js/labels.js"></script>
+        <script src="js/leaflet.photon.js"></script>
+        <script src="js/leaflet-measure.js"></script>
+        <script src="js/leaflet-search.js"></script>
+        <script src="data/Batas_Kel_Kota_Surakarta_2.js"></script>
+        <script src="data/Jalan_Kota_Solo_3.js"></script>
+        <script src="data/BatasKecamatan_4.js"></script>
+        <script src="data/government_administrative_Surakarta_5.js"></script>
+        <script src="data/Kantor_Walikota_6.js"></script>
+        <script>
+        var map = L.map('map', {
+            zoomControl:false, maxZoom:28, minZoom:1
+        }).fitBounds([[-7.591262806138222,110.7699519254232],[-7.518542492755665,110.86490920462667]]);
+        var hash = new L.Hash(map);
+        map.attributionControl.setPrefix('<a href="https://github.com/qgis2web/qgis2web" target="_blank">qgis2web</a> &middot; <a href="https://leafletjs.com" title="A JS library for interactive maps">Leaflet</a> &middot; <a href="https://qgis.org">QGIS</a>');
+        var autolinker = new Autolinker({truncate: {length: 30, location: 'smart'}});
+        // remove popup's row if "visible-with-data"
+        function removeEmptyRowsFromPopupContent(content, feature) {
+         var tempDiv = document.createElement('div');
+         tempDiv.innerHTML = content;
+         var rows = tempDiv.querySelectorAll('tr');
+         for (var i = 0; i < rows.length; i++) {
+             var td = rows[i].querySelector('td.visible-with-data');
+             var key = td ? td.id : '';
+             if (td && td.classList.contains('visible-with-data') && feature.properties[key] == null) {
+                 rows[i].parentNode.removeChild(rows[i]);
+             }
+         }
+         return tempDiv.innerHTML;
+        }
+        // modify popup if contains media
+        function addClassToPopupIfMedia(content, popup) {
+            var tempDiv = document.createElement('div');
+            tempDiv.innerHTML = content;
+            var imgTd = tempDiv.querySelector('td img');
+            if (imgTd) {
+                var src = imgTd.getAttribute('src');
+                if (/\.(jpg|jpeg|png|gif|bmp|webp|avif)$/i.test(src)) {
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp3|wav|ogg|aac)$/i.test(src)) {
+                    var audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = src;
+                    imgTd.parentNode.replaceChild(audio, imgTd);
+                    popup._contentNode.classList.add('media');
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else if (/\.(mp4|webm|ogg|mov)$/i.test(src)) {
+                    var video = document.createElement('video');
+                    video.controls = true;
+                    video.src = src;
+                    video.style.width = "400px";
+                    video.style.height = "300px";
+                    video.style.maxHeight = "60vh";
+                    video.style.maxWidth = "60vw";
+                    imgTd.parentNode.replaceChild(video, imgTd);
+                    popup._contentNode.classList.add('media');
+                    // Aggiorna il popup quando il video carica i metadati
+                    video.addEventListener('loadedmetadata', function() {
+                        popup.update();
+                    });
+                    setTimeout(function() {
+                        popup.setContent(tempDiv.innerHTML);
+                        popup.update();
+                    }, 10);
+                } else {
+                    popup._contentNode.classList.remove('media');
+                }
+            } else {
+                popup._contentNode.classList.remove('media');
+            }
+        }
+        var title = new L.Control({'position':'topright'});
+        title.onAdd = function (map) {
+            this._div = L.DomUtil.create('div', 'info');
+            this.update();
+            return this._div;
+        };
+        title.update = function () {
+            this._div.innerHTML = '<h2>Spatial Employment Map of Surakarta</h2>';
+        };
+        title.addTo(map);
+        var zoomControl = L.control.zoom({
+            position: 'topleft'
+        }).addTo(map);
+        L.control.locate({locateOptions: {maxZoom: 19}}).addTo(map);
+        var measureControl = new L.Control.Measure({
+            position: 'topleft',
+            primaryLengthUnit: 'meters',
+            secondaryLengthUnit: 'kilometers',
+            primaryAreaUnit: 'sqmeters',
+            secondaryAreaUnit: 'hectares'
+        });
+        measureControl.addTo(map);
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].innerHTML = '';
+        document.getElementsByClassName('leaflet-control-measure-toggle')[0].className += ' fas fa-ruler';
+        var bounds_group = new L.featureGroup([]);
+        function setBounds() {
+        }
+        map.createPane('pane_GoogleSatellite_0');
+        map.getPane('pane_GoogleSatellite_0').style.zIndex = 400;
+        var layer_GoogleSatellite_0 = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+            pane: 'pane_GoogleSatellite_0',
+            opacity: 1.0,
+            attribution: '<a href="https://www.google.at/permissions/geoguidelines/attr-guide.html">Map data ©2015 Google</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 20
+        });
+        layer_GoogleSatellite_0;
+        map.addLayer(layer_GoogleSatellite_0);
+        map.createPane('pane_OSMStandard_1');
+        map.getPane('pane_OSMStandard_1').style.zIndex = 401;
+        var layer_OSMStandard_1 = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            pane: 'pane_OSMStandard_1',
+            opacity: 1.0,
+            attribution: '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap contributors, CC-BY-SA</a>',
+            minZoom: 1,
+            maxZoom: 28,
+            minNativeZoom: 0,
+            maxNativeZoom: 19
+        });
+        layer_OSMStandard_1;
+        map.addLayer(layer_OSMStandard_1);
+        function pop_Batas_Kel_Kota_Surakarta_2(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2"><strong>NAMOBJ</strong><br />' + (feature.properties['NAMOBJ'] !== null ? autolinker.link(String(feature.properties['NAMOBJ']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="WADMKC" colspan="2"><strong>WADMKC</strong><br />' + (feature.properties['WADMKC'] !== null ? autolinker.link(String(feature.properties['WADMKC']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2"><strong>WADMKK</strong><br />' + (feature.properties['WADMKK'] !== null ? autolinker.link(String(feature.properties['WADMKK']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Luas" colspan="2"><strong>Luas</strong><br />' + (feature.properties['Luas'] !== null ? autolinker.link(String(feature.properties['Luas']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Mengurus Rumah Tangga" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Mengurus Rumah Tangga</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Mengurus Rumah Tangga'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Mengurus Rumah Tangga']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pelajar/Mahasiswa" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pelajar/Mahasiswa</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pelajar/Mahasiswa'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pelajar/Mahasiswa']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pensiunan" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pensiunan</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pensiunan'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pensiunan']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pegawai Negeri Sipil (PNS)" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pegawai Negeri Sipil (PNS)</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pegawai Negeri Sipil (PNS)'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pegawai Negeri Sipil (PNS)']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Tentara Nasional Indonesia (TNI)" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Tentara Nasional Indonesia (TNI)</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Tentara Nasional Indonesia (TNI)'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Tentara Nasional Indonesia (TNI)']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kepolisian RI (POLRI)" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kepolisian RI (POLRI)</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kepolisian RI (POLRI)'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kepolisian RI (POLRI)']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pengajar" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pengajar</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pengajar'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pengajar']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Petani, Pekebun, Peternak" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Petani, Pekebun, Peternak</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Petani, Pekebun, Peternak'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Petani, Pekebun, Peternak']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Nelayan/Perikanan" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Nelayan/Perikanan</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Nelayan/Perikanan'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Nelayan/Perikanan']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kesehatan" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kesehatan</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kesehatan'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Kesehatan']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Keagamaan" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Keagamaan</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Keagamaan'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Keagamaan']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Perdagangan" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Perdagangan</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Perdagangan'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Perdagangan']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Wiraswasta" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Wiraswasta</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Wiraswasta'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Wiraswasta']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Karyawan Swasta, BUMN, BUMD, Honorer" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Karyawan Swasta, BUMN, BUMD, Honorer</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Karyawan Swasta, BUMN, BUMD, Honorer'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Karyawan Swasta, BUMN, BUMD, Honorer']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Buruh Harian Lepas" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Buruh Harian Lepas</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Buruh Harian Lepas'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Buruh Harian Lepas']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td class="visible-with-data" id="Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pekerjaan Lainnya" colspan="2"><strong>Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pekerjaan Lainnya</strong><br />' + (feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pekerjaan Lainnya'] !== null ? autolinker.link(String(feature.properties['Jumlah Penduduk Menurut Kelurahan dan Jenis Pekerjaan, 2024_Pekerjaan Lainnya']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Batas_Kel_Kota_Surakarta_2_0(feature) {
+            switch(String(feature.properties['NAMOBJ'])) {
+                case 'Baluwarti':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(228,150,67,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Banjarsari':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(194,48,238,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Banyuanyar':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(238,139,96,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Bumi':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(95,106,207,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Danukusuman':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(41,162,222,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Gajahan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(116,211,75,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Gandekan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(121,206,132,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Gilingan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(205,26,208,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Jagalan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(206,90,12,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Jajar':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(57,13,218,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Jayengan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(76,223,63,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Jebres':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(235,72,96,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Joglo':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(174,201,99,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Joyosuran':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(17,81,218,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Joyotakan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(60,205,27,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kadipiro':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(203,185,97,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kampungbaru':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(108,95,206,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Karangasem':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(167,233,60,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kauman':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(204,223,109,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kedunglumbu':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(230,38,24,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kemlayan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(156,233,73,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kepatihan Kulon':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(205,127,215,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kepatihan Wetan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(45,172,210,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Keprabon':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(98,202,204,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kerten':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(199,206,65,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kestalan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(128,16,220,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Ketelan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(84,227,213,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Kratonan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(215,51,111,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Laweyan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(25,213,31,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Manahan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(40,135,213,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Mangkubumen':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(223,13,136,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Mojo':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(212,179,126,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Mojosongo':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(216,115,119,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Nusukan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(128,58,214,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Pajang':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(50,236,118,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Panularan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(106,239,17,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Pasarkliwon':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(224,21,183,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Penumping':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(227,36,167,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Pucangsawit':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(53,195,214,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Punggawan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(95,204,146,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Purwodiningratan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(130,226,207,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Purwosari':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(230,103,135,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Sangkrah':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(94,94,202,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Semanggi':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(232,201,115,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Serengan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(237,89,158,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Setabelan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(209,199,16,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Sewu':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(232,110,220,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Sondakan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(149,113,221,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Sriwedari':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(59,219,99,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Sudiroprajan':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(25,239,150,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Sumber':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(226,91,60,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Tegalharjo':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(66,102,232,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Timuran':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(197,127,232,0.488)',
+                interactive: true,
+            }
+                    break;
+                case 'Tipes':
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(82,146,231,0.488)',
+                interactive: true,
+            }
+                    break;
+                default:
+                    return {
+                pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+                opacity: 1,
+                color: 'rgba(0,0,0,0.488)',
+                dashArray: '',
+                lineCap: 'butt',
+                lineJoin: 'miter',
+                weight: 1.0, 
+                fill: true,
+                fillOpacity: 1,
+                fillColor: 'rgba(66,212,166,0.488)',
+                interactive: true,
+            }
+                    break;
+            }
+        }
+        map.createPane('pane_Batas_Kel_Kota_Surakarta_2');
+        map.getPane('pane_Batas_Kel_Kota_Surakarta_2').style.zIndex = 402;
+        map.getPane('pane_Batas_Kel_Kota_Surakarta_2').style['mix-blend-mode'] = 'normal';
+        var layer_Batas_Kel_Kota_Surakarta_2 = new L.geoJson(json_Batas_Kel_Kota_Surakarta_2, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Batas_Kel_Kota_Surakarta_2',
+            layerName: 'layer_Batas_Kel_Kota_Surakarta_2',
+            pane: 'pane_Batas_Kel_Kota_Surakarta_2',
+            onEachFeature: pop_Batas_Kel_Kota_Surakarta_2,
+            style: style_Batas_Kel_Kota_Surakarta_2_0,
+        });
+        bounds_group.addLayer(layer_Batas_Kel_Kota_Surakarta_2);
+        map.addLayer(layer_Batas_Kel_Kota_Surakarta_2);
+        function pop_Jalan_Kota_Solo_3(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['KONRJL'] !== null ? autolinker.link(String(feature.properties['KONRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LKONOF'] !== null ? autolinker.link(String(feature.properties['LKONOF']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LKSBSP'] !== null ? autolinker.link(String(feature.properties['LKSBSP']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LKSRTA'] !== null ? autolinker.link(String(feature.properties['LKSRTA']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LLHRRT'] !== null ? autolinker.link(String(feature.properties['LLHRRT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LOCRJL'] !== null ? autolinker.link(String(feature.properties['LOCRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LBRBHJ'] !== null ? autolinker.link(String(feature.properties['LBRBHJ']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['LBRJLN'] !== null ? autolinker.link(String(feature.properties['LBRJLN']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['MATRJL'] !== null ? autolinker.link(String(feature.properties['MATRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['MEDRJL'] !== null ? autolinker.link(String(feature.properties['MEDRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['SPCRJL'] !== null ? autolinker.link(String(feature.properties['SPCRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['STARJL'] !== null ? autolinker.link(String(feature.properties['STARJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['TOLRJL'] !== null ? autolinker.link(String(feature.properties['TOLRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['UTKRJL'] !== null ? autolinker.link(String(feature.properties['UTKRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['VLCPRT'] !== null ? autolinker.link(String(feature.properties['VLCPRT']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['WLYRJL'] !== null ? autolinker.link(String(feature.properties['WLYRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['TGL_SK'] !== null ? autolinker.link(String(feature.properties['TGL_SK']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['JLNLYG'] !== null ? autolinker.link(String(feature.properties['JLNLYG']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['KLSRJL'] !== null ? autolinker.link(String(feature.properties['KLSRJL']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['FID_Batas_'] !== null ? autolinker.link(String(feature.properties['FID_Batas_']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['OBJECTID_1'] !== null ? autolinker.link(String(feature.properties['OBJECTID_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['OBJECTID_2'] !== null ? autolinker.link(String(feature.properties['OBJECTID_2']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['SRS_ID_1'] !== null ? autolinker.link(String(feature.properties['SRS_ID_1']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['WADMKC'] !== null ? autolinker.link(String(feature.properties['WADMKC']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['WADMKK'] !== null ? autolinker.link(String(feature.properties['WADMKK']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['WADMPR'] !== null ? autolinker.link(String(feature.properties['WADMPR']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['Luas'] !== null ? autolinker.link(String(feature.properties['Luas']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['SHAPE_Leng'] !== null ? autolinker.link(String(feature.properties['SHAPE_Leng']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Jalan_Kota_Solo_3_0() {
+            return {
+                pane: 'pane_Jalan_Kota_Solo_3',
+                opacity: 1,
+                color: 'rgba(227,26,28,1.0)',
+                dashArray: '',
+                lineCap: 'square',
+                lineJoin: 'bevel',
+                weight: 1.0,
+                fillOpacity: 0,
+                interactive: false,
+            }
+        }
+        map.createPane('pane_Jalan_Kota_Solo_3');
+        map.getPane('pane_Jalan_Kota_Solo_3').style.zIndex = 403;
+        map.getPane('pane_Jalan_Kota_Solo_3').style['mix-blend-mode'] = 'normal';
+        var layer_Jalan_Kota_Solo_3 = new L.geoJson(json_Jalan_Kota_Solo_3, {
+            attribution: '',
+            interactive: false,
+            dataVar: 'json_Jalan_Kota_Solo_3',
+            layerName: 'layer_Jalan_Kota_Solo_3',
+            pane: 'pane_Jalan_Kota_Solo_3',
+            onEachFeature: pop_Jalan_Kota_Solo_3,
+            style: style_Jalan_Kota_Solo_3_0,
+        });
+        bounds_group.addLayer(layer_Jalan_Kota_Solo_3);
+        map.addLayer(layer_Jalan_Kota_Solo_3);
+        function pop_BatasKecamatan_4(feature, layer) {
+            var popupContent = '<table>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_BatasKecamatan_4_0() {
+            return {
+                pane: 'pane_BatasKecamatan_4',
+                opacity: 1,
+                color: 'rgba(0,0,0,1.0)',
+                dashArray: '',
+                lineCap: 'round',
+                lineJoin: 'round',
+                weight: 4.0,
+                fillOpacity: 0,
+                interactive: true,
+            }
+        }
+        map.createPane('pane_BatasKecamatan_4');
+        map.getPane('pane_BatasKecamatan_4').style.zIndex = 404;
+        map.getPane('pane_BatasKecamatan_4').style['mix-blend-mode'] = 'normal';
+        var layer_BatasKecamatan_4 = new L.geoJson(json_BatasKecamatan_4, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_BatasKecamatan_4',
+            layerName: 'layer_BatasKecamatan_4',
+            pane: 'pane_BatasKecamatan_4',
+            onEachFeature: pop_BatasKecamatan_4,
+            style: style_BatasKecamatan_4_0,
+        });
+        bounds_group.addLayer(layer_BatasKecamatan_4);
+        map.addLayer(layer_BatasKecamatan_4);
+        function pop_government_administrative_Surakarta_5(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['name'] !== null ? autolinker.link(String(feature.properties['name']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_government_administrative_Surakarta_5_0() {
+            return {
+                pane: 'pane_government_administrative_Surakarta_5',
+        rotationAngle: 0.0,
+        rotationOrigin: 'center center',
+        icon: L.icon({
+            iconUrl: 'markers/government_administrative_Surakarta_5.svg',
+            iconSize: [13.68, 13.68]
+        }),
+                interactive: true,
+            }
+        }
+        map.createPane('pane_government_administrative_Surakarta_5');
+        map.getPane('pane_government_administrative_Surakarta_5').style.zIndex = 405;
+        map.getPane('pane_government_administrative_Surakarta_5').style['mix-blend-mode'] = 'normal';
+        var layer_government_administrative_Surakarta_5 = new L.geoJson(json_government_administrative_Surakarta_5, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_government_administrative_Surakarta_5',
+            layerName: 'layer_government_administrative_Surakarta_5',
+            pane: 'pane_government_administrative_Surakarta_5',
+            onEachFeature: pop_government_administrative_Surakarta_5,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.marker(latlng, style_government_administrative_Surakarta_5_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_government_administrative_Surakarta_5);
+        map.addLayer(layer_government_administrative_Surakarta_5);
+        function pop_Kantor_Walikota_6(feature, layer) {
+            var popupContent = '<table>\
+                    <tr>\
+                        <td colspan="2">' + (feature.properties['NAMOBJ'] !== null ? autolinker.link(String(feature.properties['NAMOBJ']).replace(/'/g, '\'').toLocaleString()) : '') + '</td>\
+                    </tr>\
+                </table>';
+            var content = removeEmptyRowsFromPopupContent(popupContent, feature);
+			layer.on('popupopen', function(e) {
+				addClassToPopupIfMedia(content, e.popup);
+			});
+			layer.bindPopup(content, { maxHeight: 400 });
+        }
+
+        function style_Kantor_Walikota_6_0() {
+            return {
+                pane: 'pane_Kantor_Walikota_6',
+        rotationAngle: 0.0,
+        rotationOrigin: 'center center',
+        icon: L.icon({
+            iconUrl: 'markers/Kantor_Walikota_6.svg',
+            iconSize: [30.4, 30.4]
+        }),
+                interactive: true,
+            }
+        }
+        map.createPane('pane_Kantor_Walikota_6');
+        map.getPane('pane_Kantor_Walikota_6').style.zIndex = 406;
+        map.getPane('pane_Kantor_Walikota_6').style['mix-blend-mode'] = 'normal';
+        var layer_Kantor_Walikota_6 = new L.geoJson(json_Kantor_Walikota_6, {
+            attribution: '',
+            interactive: true,
+            dataVar: 'json_Kantor_Walikota_6',
+            layerName: 'layer_Kantor_Walikota_6',
+            pane: 'pane_Kantor_Walikota_6',
+            onEachFeature: pop_Kantor_Walikota_6,
+            pointToLayer: function (feature, latlng) {
+                var context = {
+                    feature: feature,
+                    variables: {}
+                };
+                return L.marker(latlng, style_Kantor_Walikota_6_0(feature));
+            },
+        });
+        bounds_group.addLayer(layer_Kantor_Walikota_6);
+        map.addLayer(layer_Kantor_Walikota_6);
+        const url = {"Nominatim OSM": "https://nominatim.openstreetmap.org/search?format=geojson&addressdetails=1&",
+        "France BAN": "https://api-adresse.data.gouv.fr/search/?"}
+        var photonControl = L.control.photon({
+            url: url["Nominatim OSM"],
+            feedbackLabel: '',
+            position: 'topleft',
+            includePosition: true,
+            initial: true,
+            // resultsHandler: myHandler,
+        }).addTo(map);
+        photonControl._container.childNodes[0].style.borderRadius="10px"
+        // Create a variable to store the geoJSON data
+        var x = null;
+        // Create a variable to store the marker
+        var marker = null;
+        // Add an event listener to the Photon control to create a marker from the returned geoJSON data
+        var z = null;
+        photonControl.on('selected', function(e) {
+            console.log(photonControl.search.resultsContainer);
+            if (x != null) {
+                map.removeLayer(obj3.marker);
+                map.removeLayer(x);
+            }
+            obj2.gcd = e.choice;
+            x = L.geoJSON(obj2.gcd).addTo(map);
+            var label = typeof obj2.gcd.properties.label === 'undefined' ? obj2.gcd.properties.display_name : obj2.gcd.properties.label;
+            obj3.marker = L.marker(x.getLayers()[0].getLatLng()).bindPopup(label).addTo(map);
+            map.setView(x.getLayers()[0].getLatLng(), 17);
+            z = typeof e.choice.properties.label === 'undefined'? e.choice.properties.display_name : e.choice.properties.label;
+            console.log(e);
+            e.target.input.value = z;
+        });
+        var search = document.getElementsByClassName("leaflet-photon leaflet-control")[0];
+        search.classList.add("leaflet-control-search")
+        search.style.display = "flex";
+        search.style.backgroundColor="rgba(255,255,255,0.5)" 
+
+        // Create the new button element
+        var button = document.createElement("div");
+        button.id = "gcd-button-control";
+        button.className = "gcd-gl-btn fa fa-search search-button";
+
+        // Insert the button at the beginning of the search control
+        search.insertBefore(button, search.firstChild);
+        last = search.lastChild;
+        last.style.display = "none";
+        button.addEventListener("click", function (e) {
+            if (last.style.display === "none") {
+                last.style.display = "block";
+            } else {
+                last.style.display = "none";
+            }
+        });
+        var overlaysTree = [
+            {label: '<img src="legend/Kantor_Walikota_6.png" /> Kantor_Walikota', layer: layer_Kantor_Walikota_6},
+            {label: '<img src="legend/government_administrative_Surakarta_5.png" /> government_administrative_Surakarta', layer: layer_government_administrative_Surakarta_5},
+            {label: '<img src="legend/BatasKecamatan_4.png" /> Batas Kecamatan', layer: layer_BatasKecamatan_4},
+            {label: '<img src="legend/Jalan_Kota_Solo_3.png" /> Jalan_Kota_Solo', layer: layer_Jalan_Kota_Solo_3},
+            {label: 'Batas_Kel_Kota_Surakarta<br /><table><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Baluwarti0.png" /></td><td>Baluwarti</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Banjarsari1.png" /></td><td>Banjarsari</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Banyuanyar2.png" /></td><td>Banyuanyar</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Bumi3.png" /></td><td>Bumi</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Danukusuman4.png" /></td><td>Danukusuman</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Gajahan5.png" /></td><td>Gajahan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Gandekan6.png" /></td><td>Gandekan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Gilingan7.png" /></td><td>Gilingan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Jagalan8.png" /></td><td>Jagalan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Jajar9.png" /></td><td>Jajar</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Jayengan10.png" /></td><td>Jayengan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Jebres11.png" /></td><td>Jebres</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Joglo12.png" /></td><td>Joglo</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Joyosuran13.png" /></td><td>Joyosuran</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Joyotakan14.png" /></td><td>Joyotakan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kadipiro15.png" /></td><td>Kadipiro</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kampungbaru16.png" /></td><td>Kampungbaru</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Karangasem17.png" /></td><td>Karangasem</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kauman18.png" /></td><td>Kauman</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kedunglumbu19.png" /></td><td>Kedunglumbu</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kemlayan20.png" /></td><td>Kemlayan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_KepatihanKulon21.png" /></td><td>Kepatihan Kulon</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_KepatihanWetan22.png" /></td><td>Kepatihan Wetan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Keprabon23.png" /></td><td>Keprabon</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kerten24.png" /></td><td>Kerten</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kestalan25.png" /></td><td>Kestalan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Ketelan26.png" /></td><td>Ketelan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Kratonan27.png" /></td><td>Kratonan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Laweyan28.png" /></td><td>Laweyan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Manahan29.png" /></td><td>Manahan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Mangkubumen30.png" /></td><td>Mangkubumen</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Mojo31.png" /></td><td>Mojo</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Mojosongo32.png" /></td><td>Mojosongo</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Nusukan33.png" /></td><td>Nusukan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Pajang34.png" /></td><td>Pajang</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Panularan35.png" /></td><td>Panularan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Pasarkliwon36.png" /></td><td>Pasarkliwon</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Penumping37.png" /></td><td>Penumping</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Pucangsawit38.png" /></td><td>Pucangsawit</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Punggawan39.png" /></td><td>Punggawan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Purwodiningratan40.png" /></td><td>Purwodiningratan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Purwosari41.png" /></td><td>Purwosari</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Sangkrah42.png" /></td><td>Sangkrah</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Semanggi43.png" /></td><td>Semanggi</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Serengan44.png" /></td><td>Serengan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Setabelan45.png" /></td><td>Setabelan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Sewu46.png" /></td><td>Sewu</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Sondakan47.png" /></td><td>Sondakan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Sriwedari48.png" /></td><td>Sriwedari</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Sudiroprajan49.png" /></td><td>Sudiroprajan</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Sumber50.png" /></td><td>Sumber</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Tegalharjo51.png" /></td><td>Tegalharjo</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Timuran52.png" /></td><td>Timuran</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_Tipes53.png" /></td><td>Tipes</td></tr><tr><td style="text-align: center;"><img src="legend/Batas_Kel_Kota_Surakarta_2_54.png" /></td><td></td></tr></table>', layer: layer_Batas_Kel_Kota_Surakarta_2},
+            {label: "OSM Standard", layer: layer_OSMStandard_1, radioGroup: 'bm' },
+            {label: "Google Satellite", layer: layer_GoogleSatellite_0, radioGroup: 'bm' },]
+        var lay = L.control.layers.tree(null, overlaysTree,{
+            //namedToggle: true,
+            //selectorBack: false,
+            //closedSymbol: '&#8862; &#x1f5c0;',
+            //openedSymbol: '&#8863; &#x1f5c1;',
+            //collapseAll: 'Collapse all',
+            //expandAll: 'Expand all',
+            collapsed: true,
+        });
+        lay.addTo(map);
+        setBounds();
+        var i = 0;
+        layer_Batas_Kel_Kota_Surakarta_2.eachLayer(function(layer) {
+            var context = {
+                feature: layer.feature,
+                variables: {}
+            };
+            layer.bindTooltip((layer.feature.properties['WADMKD'] !== null?String('<div style="color: #323232; font-size: 9pt; font-weight: bold; font-family: \'Open Sans\', sans-serif;">' + layer.feature.properties['WADMKD']) + '</div>':''), {permanent: true, offset: [-0, -16], className: 'css_Batas_Kel_Kota_Surakarta_2'});
+            labels.push(layer);
+            totalMarkers += 1;
+              layer.added = true;
+              addLabel(layer, i);
+              i++;
+        });
+        map.addControl(new L.Control.Search({
+            layer: layer_Batas_Kel_Kota_Surakarta_2,
+            initial: false,
+            hideMarkerOnCollapse: true,
+            propertyName: 'FCODE'}));
+        if (typeof url === 'undefined') {
+            document.getElementsByClassName('search-button')[0].className += ' fa fa-binoculars';
+        } else {
+            document.getElementsByClassName('search-button')[1].className += ' fa fa-binoculars';
+        }
+        resetLabels([layer_Batas_Kel_Kota_Surakarta_2,layer_BatasKecamatan_4,layer_government_administrative_Surakarta_5]);
+        map.on("zoomend", function(){
+            resetLabels([layer_Batas_Kel_Kota_Surakarta_2,layer_BatasKecamatan_4,layer_government_administrative_Surakarta_5]);
+        });
+        map.on("layeradd", function(){
+            resetLabels([layer_Batas_Kel_Kota_Surakarta_2,layer_BatasKecamatan_4,layer_government_administrative_Surakarta_5]);
+        });
+        map.on("layerremove", function(){
+            resetLabels([layer_Batas_Kel_Kota_Surakarta_2,layer_BatasKecamatan_4,layer_government_administrative_Surakarta_5]);
+        });
+        </script>        
+    </body>
+</html>
